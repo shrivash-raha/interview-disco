@@ -1,0 +1,92 @@
+
+# Log-in Log-out
+- There should be a log in page
+- There should be a log out option
+
+# Multiple Conversation
+- There should be a sidebar to add and manage multiple conversations
+- Adding a conversation should be a new endpoint
+- Deleting a conversation should be a new endpoint
+
+
+# Add job description
+- Each conversation needs to have a job description
+- User can upload job description if they want
+- User can provide any extra details that the user would want
+- The job descriptions file, if provided, should be saved
+- The supported files should be txt, PDF
+- The contents of the file should be extracted and saved in conversations table
+
+# Timer
+- User should be given an option to add a timer
+- If timer is added, the remaining time / total time should be displayed on the screen all the time
+
+# LLM changes
+- Add a detailed LLM prompt that acts as an interview assistant.
+- Call a local Ollama LLM for now to make the requests
+- Keep the option open for future to make calls to OpenAI or some other LLM APIs
+
+- Hovering over the audio, the text should also be shown.
+
+- outputs should be stored in folder: assistant or user followed by user ID then conversation ID
+
+- The user can't edit context once the conversation starts. They can view it.
+- The user can't start a conversation without providing the context.
+- The context can be a window instead of a separate section at the top.
+
+- Save the JD files as it is without modifying there names. The JDs should be saved in user ID -> conv ID
+- The user can either upload the JD file or paste the JD text, not both.
+- Instead of showing the text on hover, there should be a transcript option at the bottom of every audio, clicking which the transcript should open up, below the audio. It could be collapsed as well.
+- Timer is not running.
+
+- Default timer is 30 minutes
+- Don't need the JD File name any more in the DB
+- Instead of new conversation, name it something else which relates to new practice intervew
+- Once timer stops, the user can't send any more responses.
+
+- On uploading the JD file, the JD text should be auto populated.
+
+- After the timer, confirm if the user would like to continue and extend (for few minutes or indefinitely)
+- Give an option to pause timer and stop inter view. During pause, the user can't view previous chats, the timer just pauses until resumed. On stop, the user is asked for a confirmation, and then the user can't send any more responses, but view previous chats.
+- Same conversation name not allowed
+
+- After interview is over, the stop, pause, continue should appear as a pop up window, not at the top as a banner.
+
+- Transcript to be shown for user audio also
+
+- The side bar should be collapsible.
+- Timed interview should collapse the sidebar. User can't switch conversations without pausing or stopping.
+
+- First Qs to be asked by the LLM.
+
+# ####################
+- When the LLM thinks, timer should be paused.
+
+
+- Choose audio type
+
+- There should be a continuous chat mode in each conversation, toggling which the audio output will be auto played and as it ends, the mic will be activated automatically until the user sends.
+- Decide where to save the media.
+
+- Increase the supported file types
+
+- Video mode on or off
+
+- Focus mode (Side bar, top bar, nav bar should go. It should enter full screen mode)
+
+- During processing, it should show if it is doing TTS, STT, LLM call, etc.
+
+- Is an interrupt button required? For the interviewee to interrupt the interviewer (LLM)?
+
+- LLM changes
+    - LLM should know the remaining time, if it is timed
+    - LLM should have previous conversation access
+        - previous conv should be either summarized
+        - Or it should be provided as it is
+    - Give user name, conversation name, other details
+    - LLM should have a very human like discussion
+
+
+
+
+

@@ -136,6 +136,7 @@ celerybeat.pid
 
 # Environments
 .env
+.env.*
 .envrc
 .venv
 env/
@@ -205,3 +206,17 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Project-generated assets
+audio_recordings/
+tts_outputs/
+media/
+job_descriptions/
+
+# Local database and logs
+*.sqlite3
+*.db
+*.db-journal
+*.log
+
+temp JDs/

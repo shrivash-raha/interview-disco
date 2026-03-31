@@ -77,13 +77,6 @@ function WaveformPreview({ audioUrl, audioRef, isPlaying, onTogglePlay }) {
     audioRef.current.currentTime = pct * audioRef.current.duration;
   };
 
-  const fmt = (s) => {
-    if (!s || isNaN(s)) return '0:00';
-    const m = Math.floor(s / 60);
-    const sec = Math.floor(s % 60);
-    return `${m}:${sec.toString().padStart(2, '0')}`;
-  };
-
   return (
     <div className="flex items-center gap-3 flex-1">
       <button

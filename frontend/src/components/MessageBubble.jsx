@@ -26,7 +26,7 @@ export default function MessageBubble({ message }) {
         {message.type === 'text' ? (
           <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{message.content}</p>
         ) : (
-          <WaveformPlayer src={message.content} />
+          <WaveformPlayer src={message.content} transcript={message.text} />
         )}
         <p className={`text-[10px] mt-1.5 ${isUser ? 'text-blue-200/70' : 'text-gray-400/70'} text-right`}>
           {time}

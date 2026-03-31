@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# local editor settings
+.vscode/
+.idea/
+
+# root-level generated media
+/audio_recordings/
+/tts_outputs/
+
+# local environment files
+.env
+.env.*

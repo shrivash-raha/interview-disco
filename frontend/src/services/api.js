@@ -1,57 +1,188 @@
-const API_BASE = '/api';
-const USE_MOCK = true; // Set to false when backend is ready
+const API_BASE = (process.env.REACT_APP_API_BASE_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
 
-const mockResponses = [
-  "That's a great question! In my experience, the key to solving complex problems is breaking them down into smaller, manageable pieces.",
-  "I'd approach this by first understanding the requirements, then designing a solution, and finally implementing it step by step.",
-  "Great point! Let me think about that... I believe the best approach would be to use a combination of algorithms and data structures.",
-  "Thanks for sharing that. Based on what you've described, I'd recommend starting with a prototype and iterating from there.",
-  "That's an interesting perspective. I'd add that testing early and often is crucial for maintaining code quality.",
-];
-
-function getRandomMockResponse() {
-  return mockResponses[Math.floor(Math.random() * mockResponses.length)];
+function toAbsoluteApiUrl(path) {
+  if (!path) return '';
+  if (/^https?:\/\//i.test(path)) return path;
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  return `${API_BASE}${normalizedPath}`;
 }
 
-export async function sendTextMessage(message) {
-  if (USE_MOCK) {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({
-          type: 'text',
-          content: getRandomMockResponse(),
-        });
-      }, 1000); // Simulate 1s network delay
-    });
+function buildHeaders(token, extraHeaders = {}) {
+  const headers = { ...extraHeaders };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
+}
+
+async function readJson(res, fallbackMessage) {
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(data?.detail || fallbackMessage);
+  }
+  return data;
+}
+
+function normalizeAssistantResponse(payload) {
+  if (payload.audio_path) {
+    return {
+      type: 'audio',
+      content: toAbsoluteApiUrl(payload.audio_path),
+      text: payload.text || '',
+      audioPath: payload.audio_path,
+      userText: payload.user_text || '',
+    };
   }
 
-  const res = await fetch(`${API_BASE}/text-response`, {
+  return {
+    type: 'text',
+    content: payload.text || '',
+    text: payload.text || '',
+    audioPath: '',
+    userText: payload.user_text || '',
+  };
+}
+
+export function mapMessage(message) {
+  return {
+    id: message.id,
+    sender: message.sender,
+    type: message.audio_path ? 'audio' : (message.type || message.message_type || 'text'),
+    content: message.audio_path ? toAbsoluteApiUrl(message.audio_path) : (message.text || ''),
+    text: message.text || '',
+    audioPath: message.audio_path ? toAbsoluteApiUrl(message.audio_path) : '',
+    timestamp: message.created_at || Date.now(),
+  };
+}
+
+export async function login(email, password) {
+  const res = await fetch(`${API_BASE}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ email, password }),
   });
-  if (!res.ok) throw new Error(`Text API error: ${res.status}`);
-  return res.json();
+  return readJson(res, 'Login failed');
 }
 
-export async function sendAudioMessage(audioBlob) {
-  if (USE_MOCK) {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({
-          type: 'text',
-          content: `[Mock] I received your audio (${(audioBlob.size / 1024).toFixed(1)} KB). Here's my response: ${getRandomMockResponse()}`,
-        });
-      }, 1500); // Simulate 1.5s network delay
-    });
-  }
+export async function fetchCurrentUser(token) {
+  const res = await fetch(`${API_BASE}/auth/me`, {
+    headers: buildHeaders(token),
+  });
+  return readJson(res, 'Could not fetch current user');
+}
 
-  const formData = new FormData();
-  formData.append('file', audioBlob, 'recording.wav');
-  const res = await fetch(`${API_BASE}/audio-response`, {
+export async function logout(token) {
+  const res = await fetch(`${API_BASE}/auth/logout`, {
     method: 'POST',
+    headers: buildHeaders(token),
+  });
+  return readJson(res, 'Logout failed');
+}
+
+export async function listConversations(token) {
+  const res = await fetch(`${API_BASE}/conversations`, {
+    headers: buildHeaders(token),
+  });
+  return readJson(res, 'Could not load conversations');
+}
+
+export async function createConversation(name, token) {
+  const res = await fetch(`${API_BASE}/conversations`, {
+    method: 'POST',
+    headers: buildHeaders(token, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ name }),
+  });
+  return readJson(res, 'Could not create conversation');
+}
+
+export async function updateConversationContext(conversationId, payload, token) {
+  const formData = new FormData();
+  if (payload.name !== undefined) formData.append('name', payload.name);
+  if (payload.jobDescriptionText !== undefined && !payload.file) formData.append('job_description_text', payload.jobDescriptionText);
+  if (payload.extraDetails !== undefined) formData.append('extra_details', payload.extraDetails);
+  if (payload.timerEnabled !== undefined) formData.append('timer_enabled', String(payload.timerEnabled));
+  if (payload.timerTotalMinutes !== undefined && payload.timerTotalMinutes !== null) {
+    formData.append('timer_total_minutes', String(payload.timerTotalMinutes));
+  }
+  if (payload.file) formData.append('file', payload.file);
+
+  const res = await fetch(`${API_BASE}/conversations/${conversationId}/context`, {
+    method: 'PUT',
+    headers: buildHeaders(token),
     body: formData,
   });
-  if (!res.ok) throw new Error(`Audio API error: ${res.status}`);
-  return res.json();
+  return readJson(res, 'Could not update conversation context');
+}
+
+export async function extractJobDescription(file, token) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const res = await fetch(`${API_BASE}/conversations/job-description/extract`, {
+    method: 'POST',
+    headers: buildHeaders(token),
+    body: formData,
+  });
+  return readJson(res, 'Could not extract job description');
+}
+
+export async function deleteConversation(conversationId, token) {
+  const res = await fetch(`${API_BASE}/conversations/${conversationId}`, {
+    method: 'DELETE',
+    headers: buildHeaders(token),
+  });
+  return readJson(res, 'Could not delete conversation');
+}
+
+export async function pauseInterview(conversationId, token) {
+  const res = await fetch(`${API_BASE}/conversations/${conversationId}/pause`, {
+    method: 'POST',
+    headers: buildHeaders(token),
+  });
+  return readJson(res, 'Could not pause practice interview');
+}
+
+export async function resumeInterview(conversationId, payload, token) {
+  const res = await fetch(`${API_BASE}/conversations/${conversationId}/resume`, {
+    method: 'POST',
+    headers: buildHeaders(token, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  });
+  return readJson(res, 'Could not resume practice interview');
+}
+
+export async function stopInterview(conversationId, token) {
+  const res = await fetch(`${API_BASE}/conversations/${conversationId}/stop`, {
+    method: 'POST',
+    headers: buildHeaders(token),
+  });
+  return readJson(res, 'Could not stop practice interview');
+}
+
+export async function fetchConversationMessages(conversationId, token) {
+  const res = await fetch(`${API_BASE}/conversations/${conversationId}/messages`, {
+    headers: buildHeaders(token),
+  });
+  const messages = await readJson(res, 'Could not load conversation');
+  return messages.map(mapMessage);
+}
+
+export async function sendTextMessage(message, conversationId, token) {
+  const res = await fetch(`${API_BASE}/text-input`, {
+    method: 'POST',
+    headers: buildHeaders(token, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ message, conversation_id: conversationId }),
+  });
+  return normalizeAssistantResponse(await readJson(res, 'Text request failed'));
+}
+
+export async function sendAudioMessage(audioBlob, conversationId, token) {
+  const formData = new FormData();
+  formData.append('conversation_id', String(conversationId));
+  formData.append('file', audioBlob, 'recording.wav');
+
+  const res = await fetch(`${API_BASE}/audio-input`, {
+    method: 'POST',
+    headers: buildHeaders(token),
+    body: formData,
+  });
+  return normalizeAssistantResponse(await readJson(res, 'Audio request failed'));
 }
