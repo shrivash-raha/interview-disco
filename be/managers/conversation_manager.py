@@ -1,33 +1,34 @@
 from datetime import datetime, timezone
 
-from sqlalchemy.orm import Session
-
 from db.models import Conversation, Message, User
+from repositories.conversation_repository import ConversationRepository
+from repositories.message_repository import MessageRepository
 
 
 class ConversationManager:
     DEFAULT_TIMER_SECONDS = 30 * 60
+    MAX_TIMER_SECONDS = 3 * 60 * 60
     STATUS_ACTIVE = "active"
     STATUS_PAUSED = "paused"
     STATUS_STOPPED = "stopped"
+    VALID_INTERACTION_MODES = {
+        Conversation.MODE_TEXT,
+        Conversation.MODE_AUDIO,
+        Conversation.MODE_VIDEO,
+    }
 
     @staticmethod
-    def list_conversations(user: User, db: Session) -> list[Conversation]:
-        return (
-            db.query(Conversation)
-            .filter(Conversation.user_id == user.id)
-            .order_by(Conversation.created_at.desc(), Conversation.id.desc())
-            .all()
-        )
+    def list_conversations(user: User) -> list[Conversation]:
+        return ConversationRepository.list_by_user(user.id)
 
     @staticmethod
     def _normalize_name(name: str) -> str:
         return " ".join(name.strip().split()).lower()
 
     @staticmethod
-    def _ensure_unique_name(name: str, user: User, db: Session, exclude_conversation_id: int | None = None) -> None:
+    def _ensure_unique_name(name: str, user: User, exclude_conversation_id: int | None = None) -> None:
         normalized = ConversationManager._normalize_name(name)
-        conversations = db.query(Conversation).filter(Conversation.user_id == user.id).all()
+        conversations = ConversationRepository.list_by_user(user.id)
         for conversation in conversations:
             if exclude_conversation_id is not None and conversation.id == exclude_conversation_id:
                 continue
@@ -35,66 +36,34 @@ class ConversationManager:
                 raise ValueError("A practice interview with this name already exists")
 
     @staticmethod
-    def create_conversation(name: str, user: User, db: Session) -> Conversation:
-        ConversationManager._ensure_unique_name(name, user, db)
-        conversation = Conversation(
-            name=name,
-            description=None,
-            job_description_text=None,
-            extra_details=None,
-            job_description_file_path=None,
-            interview_status=ConversationManager.STATUS_ACTIVE,
-            timer_enabled=True,
-            timer_total_seconds=ConversationManager.DEFAULT_TIMER_SECONDS,
-            timer_started_at=None,
-            timer_remaining_seconds=ConversationManager.DEFAULT_TIMER_SECONDS,
-            user_id=user.id,
-        )
-        db.add(conversation)
-        db.commit()
-        db.refresh(conversation)
-        return conversation
+    def create_conversation(name: str, user: User) -> Conversation:
+        ConversationManager._ensure_unique_name(name, user)
+        return ConversationRepository.create(name=name, user_id=user.id)
 
     @staticmethod
-    def delete_conversation(conversation_id: int, user: User, db: Session) -> None:
-        conversation = ConversationManager.get_conversation(conversation_id, user, db)
-        db.delete(conversation)
-        db.commit()
+    def delete_conversation(conversation_id: int, user: User) -> None:
+        conversation = ConversationManager.get_conversation(conversation_id, user)
+        ConversationRepository.soft_delete(conversation)
 
     @staticmethod
-    def get_conversation(conversation_id: int, user: User, db: Session) -> Conversation:
-        conversation = (
-            db.query(Conversation)
-            .filter(Conversation.id == conversation_id, Conversation.user_id == user.id)
-            .first()
-        )
+    def get_conversation(conversation_id: int, user: User) -> Conversation:
+        conversation = ConversationRepository.get_by_id_and_user(conversation_id, user.id)
         if not conversation:
             raise ValueError("Conversation not found")
         return conversation
 
     @staticmethod
-    def list_messages(conversation_id: int, user: User, db: Session) -> list[Message]:
-        ConversationManager.get_conversation(conversation_id, user, db)
-        return (
-            db.query(Message)
-            .filter(Message.conversation_id == conversation_id)
-            .order_by(Message.created_at.asc(), Message.id.asc())
-            .all()
-        )
+    def list_messages(conversation_id: int, user: User) -> list[Message]:
+        ConversationManager.get_conversation(conversation_id, user)
+        return MessageRepository.list_by_conversation(conversation_id)
 
     @staticmethod
-    def list_recent_messages(conversation_id: int, limit: int, db: Session) -> list[Message]:
-        return (
-            db.query(Message)
-            .filter(Message.conversation_id == conversation_id)
-            .order_by(Message.created_at.desc(), Message.id.desc())
-            .limit(limit)
-            .all()[::-1]
-        )
+    def list_recent_messages(conversation_id: int, limit: int) -> list[Message]:
+        return MessageRepository.list_recent_by_conversation(conversation_id, limit)
 
     @staticmethod
-    def has_messages(conversation_id: int, db: Session) -> bool:
-        return db.query(Message.id).filter(Message.conversation_id == conversation_id).first() is not None
+    def has_messages(conversation_id: int) -> bool:
+        return MessageRepository.exists_for_conversation(conversation_id)
 
     @staticmethod
     def has_context(conversation: Conversation) -> bool:
@@ -140,98 +109,119 @@ class ConversationManager:
             raise ValueError("The practice interview timer has ended. Extend or continue before sending more responses.")
 
     @staticmethod
+    def validate_input_mode(conversation: Conversation, input_type: str) -> None:
+        mode = conversation.interaction_mode or Conversation.MODE_TEXT
+        if mode == Conversation.MODE_AUDIO and input_type == "text":
+            raise ValueError("This practice interview is in audio mode. Text input is not available.")
+        if mode == Conversation.MODE_VIDEO:
+            raise ValueError("Video mode is not available yet.")
+
+    @staticmethod
     def update_context(
         conversation_id: int,
         user: User,
-        db: Session,
         *,
         name: str | None = None,
         job_description_text: str | None = None,
         extra_details: str | None = None,
         job_description_file_path: str | None = None,
+        interaction_mode: str | None = None,
         timer_enabled: bool | None = None,
         timer_total_seconds: int | None = None,
     ) -> Conversation:
-        conversation = ConversationManager.get_conversation(conversation_id, user, db)
-        if ConversationManager.has_messages(conversation_id, db):
+        conversation = ConversationManager.get_conversation(conversation_id, user)
+        if ConversationManager.has_messages(conversation_id):
             raise ValueError("Conversation context cannot be edited after the conversation has started")
+        update_kwargs = {}
         if name is not None:
-            ConversationManager._ensure_unique_name(name, user, db, exclude_conversation_id=conversation_id)
-            conversation.name = name
+            ConversationManager._ensure_unique_name(name, user, exclude_conversation_id=conversation_id)
+            update_kwargs["name"] = name
         if job_description_text is not None:
-            conversation.job_description_text = job_description_text
+            update_kwargs["job_description_text"] = job_description_text
         if extra_details is not None:
-            conversation.extra_details = extra_details
+            update_kwargs["extra_details"] = extra_details
         if job_description_file_path is not None:
-            conversation.job_description_file_path = job_description_file_path
+            update_kwargs["job_description_file_path"] = job_description_file_path
+        if interaction_mode is not None:
+            if interaction_mode not in ConversationManager.VALID_INTERACTION_MODES:
+                raise ValueError("Invalid interaction mode")
+            update_kwargs["interaction_mode"] = interaction_mode
+        if timer_total_seconds is not None and timer_total_seconds > ConversationManager.MAX_TIMER_SECONDS:
+            raise ValueError("Timer duration cannot exceed 180 minutes")
         if timer_enabled is not None:
-            conversation.timer_enabled = timer_enabled
             if not timer_enabled:
-                conversation.timer_total_seconds = None
-                conversation.timer_started_at = None
-                conversation.timer_remaining_seconds = None
+                update_kwargs["timer_enabled"] = False
+                update_kwargs["timer_total_seconds"] = None
+                update_kwargs["timer_started_at"] = None
+                update_kwargs["timer_remaining_seconds"] = None
             else:
-                conversation.timer_total_seconds = timer_total_seconds or conversation.timer_total_seconds or ConversationManager.DEFAULT_TIMER_SECONDS
-                conversation.timer_remaining_seconds = conversation.timer_total_seconds
-                conversation.timer_started_at = datetime.now(timezone.utc)
-                conversation.interview_status = ConversationManager.STATUS_ACTIVE
+                resolved_total_seconds = timer_total_seconds or conversation.timer_total_seconds or ConversationManager.DEFAULT_TIMER_SECONDS
+                if resolved_total_seconds > ConversationManager.MAX_TIMER_SECONDS:
+                    raise ValueError("Timer duration cannot exceed 180 minutes")
+                update_kwargs["timer_enabled"] = True
+                update_kwargs["timer_total_seconds"] = resolved_total_seconds
+                update_kwargs["timer_remaining_seconds"] = resolved_total_seconds
+                update_kwargs["timer_started_at"] = datetime.now(timezone.utc)
+                update_kwargs["interview_status"] = ConversationManager.STATUS_ACTIVE
         elif timer_total_seconds is not None and conversation.timer_enabled:
-            conversation.timer_total_seconds = timer_total_seconds
-            conversation.timer_remaining_seconds = timer_total_seconds
-            conversation.timer_started_at = datetime.now(timezone.utc)
-        db.commit()
-        db.refresh(conversation)
-        return conversation
+            if timer_total_seconds > ConversationManager.MAX_TIMER_SECONDS:
+                raise ValueError("Timer duration cannot exceed 180 minutes")
+            update_kwargs["timer_total_seconds"] = timer_total_seconds
+            update_kwargs["timer_remaining_seconds"] = timer_total_seconds
+            update_kwargs["timer_started_at"] = datetime.now(timezone.utc)
+        return ConversationRepository.update(conversation, **update_kwargs)
 
     @staticmethod
-    def pause_interview(conversation_id: int, user: User, db: Session) -> Conversation:
-        conversation = ConversationManager.get_conversation(conversation_id, user, db)
+    def pause_interview(conversation_id: int, user: User) -> Conversation:
+        conversation = ConversationManager.get_conversation(conversation_id, user)
         if conversation.interview_status == ConversationManager.STATUS_STOPPED:
             raise ValueError("A stopped practice interview cannot be paused")
-        conversation.timer_remaining_seconds = ConversationManager.get_remaining_seconds(conversation)
-        conversation.timer_started_at = None
-        conversation.interview_status = ConversationManager.STATUS_PAUSED
-        db.commit()
-        db.refresh(conversation)
-        return conversation
+        return ConversationRepository.update(
+            conversation,
+            timer_remaining_seconds=ConversationManager.get_remaining_seconds(conversation),
+            timer_started_at=None,
+            interview_status=ConversationManager.STATUS_PAUSED,
+        )
 
     @staticmethod
     def resume_interview(
         conversation_id: int,
         user: User,
-        db: Session,
         *,
         extension_minutes: int | None = None,
         continue_indefinitely: bool = False,
     ) -> Conversation:
-        conversation = ConversationManager.get_conversation(conversation_id, user, db)
+        conversation = ConversationManager.get_conversation(conversation_id, user)
         if conversation.interview_status == ConversationManager.STATUS_STOPPED:
             raise ValueError("A stopped practice interview cannot be resumed")
 
         if continue_indefinitely:
-            conversation.timer_enabled = False
-            conversation.timer_total_seconds = None
-            conversation.timer_remaining_seconds = None
-            conversation.timer_started_at = None
+            return ConversationRepository.update(
+                conversation,
+                timer_enabled=False,
+                timer_total_seconds=None,
+                timer_remaining_seconds=None,
+                timer_started_at=None,
+                interview_status=ConversationManager.STATUS_ACTIVE,
+            )
         else:
             base_remaining = ConversationManager.get_remaining_seconds(conversation) or conversation.timer_remaining_seconds or conversation.timer_total_seconds or ConversationManager.DEFAULT_TIMER_SECONDS
             extension_seconds = (extension_minutes or 0) * 60
-            conversation.timer_enabled = True
-            conversation.timer_total_seconds = base_remaining + extension_seconds
-            conversation.timer_remaining_seconds = conversation.timer_total_seconds
-            conversation.timer_started_at = datetime.now(timezone.utc)
-
-        conversation.interview_status = ConversationManager.STATUS_ACTIVE
-        db.commit()
-        db.refresh(conversation)
-        return conversation
+            return ConversationRepository.update(
+                conversation,
+                timer_enabled=True,
+                timer_total_seconds=base_remaining + extension_seconds,
+                timer_remaining_seconds=base_remaining + extension_seconds,
+                timer_started_at=datetime.now(timezone.utc),
+                interview_status=ConversationManager.STATUS_ACTIVE,
+            )
 
     @staticmethod
-    def stop_interview(conversation_id: int, user: User, db: Session) -> Conversation:
-        conversation = ConversationManager.get_conversation(conversation_id, user, db)
-        conversation.timer_remaining_seconds = ConversationManager.get_remaining_seconds(conversation)
-        conversation.timer_started_at = None
-        conversation.interview_status = ConversationManager.STATUS_STOPPED
-        db.commit()
-        db.refresh(conversation)
-        return conversation
+    def stop_interview(conversation_id: int, user: User) -> Conversation:
+        conversation = ConversationManager.get_conversation(conversation_id, user)
+        return ConversationRepository.update(
+            conversation,
+            timer_remaining_seconds=ConversationManager.get_remaining_seconds(conversation),
+            timer_started_at=None,
+            interview_status=ConversationManager.STATUS_STOPPED,
+        )

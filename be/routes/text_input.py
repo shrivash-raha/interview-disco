@@ -1,9 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
 
 from auth import get_current_user
-from db.database import get_db
 from db.models import User
 from managers.text_manager import TextManager
 
@@ -19,7 +17,6 @@ class TextInputRequest(BaseModel):
 async def text_input(
     request: TextInputRequest,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
 ):
     try:
         if not request.message.strip():
@@ -28,7 +25,6 @@ async def text_input(
             request.message,
             request.conversation_id,
             current_user,
-            db,
         )
         return result
     except HTTPException:

@@ -1,10 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
 
 from auth import create_session_token, get_current_user, verify_password
-from db.database import get_db
 from db.models import User
+from repositories.user_repository import UserRepository
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -15,14 +14,12 @@ class LoginRequest(BaseModel):
 
 
 @router.post("/login")
-def login(request: LoginRequest, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == request.email.lower()).first()
+def login(request: LoginRequest):
+    user = UserRepository.get_by_email(request.email)
     if not user or not verify_password(request.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    user.session_token = create_session_token()
-    db.commit()
-    db.refresh(user)
+    user = UserRepository.save_session_token(user, create_session_token())
 
     return {
         "token": user.session_token,
@@ -36,9 +33,8 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/logout")
-def logout(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    current_user.session_token = None
-    db.commit()
+def logout(current_user: User = Depends(get_current_user)):
+    UserRepository.save_session_token(current_user, None)
     return {"success": True}
 
 

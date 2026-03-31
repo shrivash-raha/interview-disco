@@ -98,6 +98,7 @@ export async function updateConversationContext(conversationId, payload, token) 
   if (payload.name !== undefined) formData.append('name', payload.name);
   if (payload.jobDescriptionText !== undefined && !payload.file) formData.append('job_description_text', payload.jobDescriptionText);
   if (payload.extraDetails !== undefined) formData.append('extra_details', payload.extraDetails);
+  if (payload.interactionMode !== undefined) formData.append('interaction_mode', payload.interactionMode);
   if (payload.timerEnabled !== undefined) formData.append('timer_enabled', String(payload.timerEnabled));
   if (payload.timerTotalMinutes !== undefined && payload.timerTotalMinutes !== null) {
     formData.append('timer_total_minutes', String(payload.timerTotalMinutes));

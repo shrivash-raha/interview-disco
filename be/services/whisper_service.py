@@ -1,9 +1,14 @@
+from config import get_config
+
 _model = None
 
 
 def _get_model():
     global _model
     if _model is None:
+        config = get_config()
+        if config.stt.provider != "faster_whisper":
+            raise RuntimeError(f"Unsupported STT provider: {config.stt.provider}")
         try:
             from faster_whisper import WhisperModel
         except ModuleNotFoundError as exc:
@@ -11,7 +16,10 @@ def _get_model():
                 "faster-whisper is not installed. Audio transcription requires a compatible "
                 "speech-to-text environment."
             ) from exc
-        _model = WhisperModel("medium", compute_type="int8")
+        _model = WhisperModel(
+            config.stt.model,
+            compute_type=config.stt.compute_type,
+        )
     return _model
 
 

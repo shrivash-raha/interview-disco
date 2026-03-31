@@ -1,6 +1,7 @@
 import React from 'react';
 
 export default function ConversationSidebar({
+  theme = 'dark',
   user,
   conversations,
   activeConversationId,
@@ -16,21 +17,21 @@ export default function ConversationSidebar({
 }) {
   return (
     <aside
-      className={`bg-[#08111f] border-r border-white/10 flex flex-col transition-all duration-200 ${
+      className={`${theme === 'dark' ? 'bg-[#08111f] border-r border-white/10' : 'bg-white/75 border-r border-slate-200 shadow-sm'} flex flex-col transition-all duration-200 ${
         collapsed ? 'w-full md:w-[88px] md:min-w-[88px]' : 'w-full md:w-[320px] md:min-w-[320px]'
       }`}
     >
-      <div className={`border-b border-white/10 ${collapsed ? 'px-3 py-5' : 'px-5 py-5'}`}>
+      <div className={`${theme === 'dark' ? 'border-b border-white/10' : 'border-b border-slate-200'} ${collapsed ? 'px-3 py-5' : 'px-5 py-5'}`}>
         <div className="flex items-center justify-between gap-2">
           {!collapsed ? (
-            <div className="text-xs uppercase tracking-[0.22em] text-cyan-300/70">Session</div>
+            <div className={`text-xs uppercase tracking-[0.22em] ${theme === 'dark' ? 'text-cyan-300/70' : 'text-cyan-700/70'}`}>Session</div>
           ) : (
-            <div className="text-xs uppercase tracking-[0.22em] text-cyan-300/70">Nav</div>
+            <div className={`text-xs uppercase tracking-[0.22em] ${theme === 'dark' ? 'text-cyan-300/70' : 'text-cyan-700/70'}`}>Nav</div>
           )}
           <button
             onClick={onToggleCollapse}
             disabled={collapseLocked}
-            className="rounded-xl border border-white/10 px-3 py-2 text-xs text-slate-300 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+            className={`rounded-xl px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50 ${theme === 'dark' ? 'border border-white/10 text-slate-300 hover:bg-white/5' : 'border border-slate-300 text-slate-700 hover:bg-slate-100'}`}
             title={collapseLocked ? 'Sidebar stays collapsed during an active timed interview' : (collapsed ? 'Expand sidebar' : 'Collapse sidebar')}
           >
             {collapsed ? '>' : '<'}
@@ -39,14 +40,14 @@ export default function ConversationSidebar({
         {!collapsed ? (
           <>
             <div className="mt-3">
-              <div className="text-sm font-semibold text-white">
+              <div className={`text-sm font-semibold ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
                 {user.first_name} {user.last_name}
               </div>
-              <div className="text-xs text-slate-400 mt-1">{user.email}</div>
+              <div className={`text-xs mt-1 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>{user.email}</div>
             </div>
             <button
               onClick={onLogout}
-              className="mt-4 rounded-xl border border-white/10 px-3 py-2 text-sm text-slate-200 hover:bg-white/5"
+              className={`mt-4 rounded-xl px-3 py-2 text-sm ${theme === 'dark' ? 'border border-white/10 text-slate-200 hover:bg-white/5' : 'border border-slate-300 text-slate-700 hover:bg-slate-100'}`}
             >
               Log out
             </button>
@@ -54,7 +55,7 @@ export default function ConversationSidebar({
         ) : (
           <button
             onClick={onLogout}
-            className="mt-4 w-full rounded-xl border border-white/10 px-3 py-2 text-xs text-slate-200 hover:bg-white/5"
+            className={`mt-4 w-full rounded-xl px-3 py-2 text-xs ${theme === 'dark' ? 'border border-white/10 text-slate-200 hover:bg-white/5' : 'border border-slate-300 text-slate-700 hover:bg-slate-100'}`}
             title="Log out"
           >
             Out
@@ -62,7 +63,7 @@ export default function ConversationSidebar({
         )}
       </div>
 
-      <div className={`${collapsed ? 'px-3 py-5' : 'px-5 py-5'} border-b border-white/10`}>
+      <div className={`${collapsed ? 'px-3 py-5' : 'px-5 py-5'} ${theme === 'dark' ? 'border-b border-white/10' : 'border-b border-slate-200'}`}>
         <button
           onClick={onCreateConversation}
           disabled={loading || switchLocked}
@@ -75,7 +76,7 @@ export default function ConversationSidebar({
 
       <div className={`flex-1 overflow-y-auto ${collapsed ? 'px-2 py-3' : 'px-3 py-3'}`}>
         {!collapsed ? (
-          <div className="text-xs uppercase tracking-[0.22em] text-slate-500 px-2 pb-3">Practice Interviews</div>
+          <div className={`text-xs uppercase tracking-[0.22em] px-2 pb-3 ${theme === 'dark' ? 'text-slate-500' : 'text-slate-500'}`}>Practice Interviews</div>
         ) : null}
         <div className="space-y-2">
           {conversations.map((conversation) => {
@@ -86,7 +87,9 @@ export default function ConversationSidebar({
                 className={`rounded-2xl border transition ${
                   active
                     ? 'border-cyan-400/40 bg-cyan-400/10'
-                    : 'border-white/5 bg-white/[0.03] hover:bg-white/[0.06]'
+                    : theme === 'dark'
+                      ? 'border-white/5 bg-white/[0.03] hover:bg-white/[0.06]'
+                      : 'border-slate-200 bg-white/80 hover:bg-slate-50'
                 }`}
               >
                 <button
@@ -95,16 +98,16 @@ export default function ConversationSidebar({
                   title={collapsed ? conversation.name : undefined}
                 >
                   {collapsed ? (
-                    <div className="text-center text-xs font-semibold text-white truncate">
+                    <div className={`text-center text-xs font-semibold truncate ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
                       {conversation.name.slice(0, 2).toUpperCase()}
                     </div>
                   ) : (
                     <>
-                      <div className="text-sm font-medium text-white truncate">{conversation.name}</div>
-                      <div className="text-xs text-slate-400 mt-1">
+                      <div className={`text-sm font-medium truncate ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>{conversation.name}</div>
+                      <div className={`text-xs mt-1 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
                         {new Date(conversation.created_at).toLocaleString()}
                       </div>
-                      <div className="mt-2 flex gap-2 text-[10px] uppercase tracking-[0.16em] text-slate-500">
+                      <div className={`mt-2 flex gap-2 text-[10px] uppercase tracking-[0.16em] ${theme === 'dark' ? 'text-slate-500' : 'text-slate-500'}`}>
                         {conversation.job_description_text ? <span>JD</span> : null}
                         {conversation.extra_details ? <span>Notes</span> : null}
                       </div>

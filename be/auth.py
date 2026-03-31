@@ -2,11 +2,9 @@ import hashlib
 import secrets
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException
-from sqlalchemy.orm import Session
-
-from db.database import get_db
+from fastapi import Header, HTTPException
 from db.models import User
+from repositories.user_repository import UserRepository
 
 
 def hash_password(password: str) -> str:
@@ -38,10 +36,9 @@ def _extract_bearer_token(authorization: str | None) -> str:
 
 def get_current_user(
     authorization: Annotated[str | None, Header()] = None,
-    db: Session = Depends(get_db),
 ) -> User:
     token = _extract_bearer_token(authorization)
-    user = db.query(User).filter(User.session_token == token).first()
+    user = UserRepository.get_by_session_token(token)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
     return user

@@ -3,14 +3,12 @@ from datetime import timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
 
 from auth import get_current_user
-from db.database import get_db
-from db.models import User
+from db.models import Conversation, User
 from managers.conversation_manager import ConversationManager
 from managers.text_manager import TextManager
-from services.job_description_service import extract_job_description_text, extract_job_description_text_from_upload, save_job_description_file
+from services.job_description_service import extract_job_description_text_from_upload, save_job_description_file
 
 router = APIRouter(prefix="/conversations", tags=["Conversations"])
 
@@ -33,12 +31,13 @@ def _serialize_conversation(conversation):
         "job_description_text": conversation.job_description_text,
         "extra_details": conversation.extra_details,
         "job_description_file_path": conversation.job_description_file_path,
+        "interaction_mode": conversation.interaction_mode,
         "interview_status": conversation.interview_status,
         "timer_enabled": conversation.timer_enabled,
         "timer_total_seconds": conversation.timer_total_seconds,
         "timer_remaining_seconds": ConversationManager.get_remaining_seconds(conversation),
         "timer_started_at": timer_started_at.isoformat() if timer_started_at else None,
-        "context_locked": len(conversation.messages) > 0,
+        "context_locked": ConversationManager.has_messages(conversation.id),
         "created_at": created_at.isoformat() if created_at else None,
     }
 
@@ -56,8 +55,8 @@ def _serialize_message(message):
 
 
 @router.get("")
-def list_conversations(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    conversations = ConversationManager.list_conversations(current_user, db)
+def list_conversations(current_user: User = Depends(get_current_user)):
+    conversations = ConversationManager.list_conversations(current_user)
     return [_serialize_conversation(conversation) for conversation in conversations]
 
 
@@ -65,14 +64,13 @@ def list_conversations(current_user: User = Depends(get_current_user), db: Sessi
 def create_conversation(
     request: CreateConversationRequest,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
 ):
     name = request.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="Conversation name cannot be empty")
 
     try:
-        conversation = ConversationManager.create_conversation(name, current_user, db)
+        conversation = ConversationManager.create_conversation(name, current_user)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _serialize_conversation(conversation)
@@ -100,10 +98,9 @@ def extract_job_description(
 def delete_conversation(
     conversation_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
 ):
     try:
-        ConversationManager.delete_conversation(conversation_id, current_user, db)
+        ConversationManager.delete_conversation(conversation_id, current_user)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"success": True}
@@ -113,10 +110,9 @@ def delete_conversation(
 def list_messages(
     conversation_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
 ):
     try:
-        messages = ConversationManager.list_messages(conversation_id, current_user, db)
+        messages = ConversationManager.list_messages(conversation_id, current_user)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return [_serialize_message(message) for message in messages]
@@ -126,16 +122,16 @@ def list_messages(
 async def update_conversation_context(
     conversation_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
     name: Annotated[str | None, Form()] = None,
     job_description_text: Annotated[str | None, Form()] = None,
     extra_details: Annotated[str | None, Form()] = None,
+    interaction_mode: Annotated[str | None, Form()] = None,
     timer_enabled: Annotated[bool | None, Form()] = None,
     timer_total_minutes: Annotated[int | None, Form()] = None,
     file: UploadFile | None = File(default=None),
 ):
     try:
-        conversation = ConversationManager.get_conversation(conversation_id, current_user, db)
+        conversation = ConversationManager.get_conversation(conversation_id, current_user)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -147,9 +143,20 @@ async def update_conversation_context(
         update_kwargs["name"] = trimmed_name
     if extra_details is not None:
         update_kwargs["extra_details"] = extra_details.strip() or None
+    if interaction_mode is not None:
+        normalized_mode = interaction_mode.strip().lower()
+        if normalized_mode not in {
+            Conversation.MODE_TEXT,
+            Conversation.MODE_AUDIO,
+            Conversation.MODE_VIDEO,
+        }:
+            raise HTTPException(status_code=400, detail="Invalid interaction mode")
+        update_kwargs["interaction_mode"] = normalized_mode
     if timer_total_minutes is not None:
         if timer_total_minutes <= 0:
             raise HTTPException(status_code=400, detail="Timer duration must be greater than zero minutes")
+        if timer_total_minutes > 180:
+            raise HTTPException(status_code=400, detail="Timer duration cannot exceed 180 minutes")
         update_kwargs["timer_total_seconds"] = timer_total_minutes * 60
     if timer_enabled is not None:
         update_kwargs["timer_enabled"] = timer_enabled
@@ -183,16 +190,15 @@ async def update_conversation_context(
         updated_conversation = ConversationManager.update_context(
             conversation.id,
             current_user,
-            db,
             **update_kwargs,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    if ConversationManager.has_context(updated_conversation) and not ConversationManager.has_messages(updated_conversation.id, db):
+    if ConversationManager.has_context(updated_conversation) and not ConversationManager.has_messages(updated_conversation.id):
         try:
-            await TextManager.start_conversation(updated_conversation, current_user, db)
-            updated_conversation = ConversationManager.get_conversation(updated_conversation.id, current_user, db)
+            await TextManager.start_conversation(updated_conversation, current_user)
+            updated_conversation = ConversationManager.get_conversation(updated_conversation.id, current_user)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except RuntimeError as exc:
@@ -208,10 +214,9 @@ class ResumeInterviewRequest(BaseModel):
 def pause_interview(
     conversation_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
 ):
     try:
-        conversation = ConversationManager.pause_interview(conversation_id, current_user, db)
+        conversation = ConversationManager.pause_interview(conversation_id, current_user)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _serialize_conversation(conversation)
@@ -222,7 +227,6 @@ def resume_interview(
     conversation_id: int,
     request: ResumeInterviewRequest,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
 ):
     if request.extension_minutes is not None and request.extension_minutes <= 0:
         raise HTTPException(status_code=400, detail="Extension minutes must be greater than zero")
@@ -230,7 +234,6 @@ def resume_interview(
         conversation = ConversationManager.resume_interview(
             conversation_id,
             current_user,
-            db,
             extension_minutes=request.extension_minutes,
             continue_indefinitely=request.continue_indefinitely,
         )
@@ -243,10 +246,9 @@ def resume_interview(
 def stop_interview(
     conversation_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
 ):
     try:
-        conversation = ConversationManager.stop_interview(conversation_id, current_user, db)
+        conversation = ConversationManager.stop_interview(conversation_id, current_user)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _serialize_conversation(conversation)

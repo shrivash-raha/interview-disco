@@ -59,33 +59,75 @@
 
 - First Qs to be asked by the LLM.
 
-# ####################
-- When the LLM thinks, timer should be paused.
+- Maximum time can be 3 hours
 
+- By default timer shouldn't be selected. The interview shouldn't be timed.
+
+- Dark Mode, Light Mode
+
+- Speed on audio playback (latest selected speed should be used as default in all)
+- Remove the text 'Speed'
+
+- Add an option for video mode, audio mode, text mode while creating the conversation.
+  The text mode is the current mode we're working on.
+  In audio mode, there is no text input option available.
+  In the video option, it should be a video, but for now keep it disabled. We'll work on it later.
+
+- LLM changes
+    - Use LangChain to do LLM based calls.
+    - Give user name, conversation name, total time, remaining time (if interview is timed), extra details, job description text, today's date, and time, etc. in the prompt
+    - The questions should have a flow:
+        - If it is the beginning, then questions can be general
+        - Towards the middle, the questions can be targeted
+    - LLM should take a call to check the breadth as well as depth of understanding in the given timeframe
+    - LLM should always focus on the job description and ask questions accordingly
+    - LLM should have a memory of transcripts of all the queries and responses till now
+    - LLM should have a very human like discussion
+    - LLM should know if the interview is audio mode, video mode or text mode.
+      In text mode, the input text is typed by the user (or recorded and then transcribed by STT model) and the output text is shown as text only.
+      In audio mode, the input is received as an audio and then transcribed by STT model, then the output from LLM is converted to audio by TTS model and given to user along with the transcription.
+      In video mode, the audio is same as audio mode, only a separate video feed is shown to the user, which is not given to the LLM at all.
+
+- Separate out the DB related tasks scripts
+- Separate out the manager classes
+- Any DB related changes shouldn't be done in manager class. It should be done in the DB scripts.
+- Every table in DB should have a separate script having different methods to achieve the task required.
+
+# ############################################################################################################################################
+# ############################################################################################################################################
+# ############################################################################################################################################
+# ############################################################################################################################################
+# ############################################################################################################################################
+
+- When the LLM thinks, timer should be paused.
+- Extend timer adds the time and starts from beginning. If the original timer is of 5 minutes, and after 5 minutes if I extend by 2 minutes, the new timer runs for 7 minutes. I want the extended timer to run for 2 out of 7 minutes.
+
+- During processing, it should show if it is doing TTS, STT, LLM call, etc.
 
 - Choose audio type
 
-- There should be a continuous chat mode in each conversation, toggling which the audio output will be auto played and as it ends, the mic will be activated automatically until the user sends.
 - Decide where to save the media.
 
 - Increase the supported file types
 
-- Video mode on or off
-
 - Focus mode (Side bar, top bar, nav bar should go. It should enter full screen mode)
-
-- During processing, it should show if it is doing TTS, STT, LLM call, etc.
 
 - Is an interrupt button required? For the interviewee to interrupt the interviewer (LLM)?
 
-- LLM changes
-    - LLM should know the remaining time, if it is timed
-    - LLM should have previous conversation access
-        - previous conv should be either summarized
-        - Or it should be provided as it is
-    - Give user name, conversation name, other details
-    - LLM should have a very human like discussion
+- Video mode
 
+
+- User Management
+
+- Dark mode scroll bar is not in dark mode
+
+- Use a config.ini to get the STT models, TTS models, use temp responses, LLMs, history to consider, etc.
+
+- Give option to upload resume also. Or a text box to tell about self.
+
+- Ask company name if possible
+
+- The candidate shouldn't deviate a lot from the job description. If the candidate deviates, the questions should be asked in a way to bring back the focus to the JD and to complete the interview in the provided time (if provided).
 
 
 

@@ -22,13 +22,19 @@ class User(Base):
 class Conversation(Base):
     __tablename__ = "conversations"
 
+    MODE_TEXT = "text"
+    MODE_AUDIO = "audio"
+    MODE_VIDEO = "video"
+
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     job_description_text = Column(Text, nullable=True)
     extra_details = Column(Text, nullable=True)
     job_description_file_path = Column(Text, nullable=True)
+    interaction_mode = Column(String(16), nullable=False, default=MODE_TEXT)
     interview_status = Column(String(32), nullable=False, default="active")
+    is_deleted = Column(Boolean, nullable=False, default=False)
     timer_enabled = Column(Boolean, nullable=False, default=False)
     timer_total_seconds = Column(Integer, nullable=True)
     timer_started_at = Column(DateTime, nullable=True)

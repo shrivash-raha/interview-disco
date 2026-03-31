@@ -2,7 +2,8 @@ from sqlalchemy import inspect, text
 
 from auth import hash_password
 from db.database import engine, SessionLocal, Base
-from db.models import User, Conversation
+from repositories.conversation_repository import ConversationRepository
+from repositories.user_repository import UserRepository
 
 DEFAULT_EMAIL = "shri@mail.com"
 DEFAULT_PASSWORD = "demo123"
@@ -30,8 +31,12 @@ def _migrate_schema():
             connection.execute(text("ALTER TABLE conversations ADD COLUMN extra_details TEXT"))
         if "job_description_file_path" not in conversation_columns:
             connection.execute(text("ALTER TABLE conversations ADD COLUMN job_description_file_path TEXT"))
+        if "interaction_mode" not in conversation_columns:
+            connection.execute(text("ALTER TABLE conversations ADD COLUMN interaction_mode VARCHAR(16) NOT NULL DEFAULT 'text'"))
         if "interview_status" not in conversation_columns:
             connection.execute(text("ALTER TABLE conversations ADD COLUMN interview_status VARCHAR(32) NOT NULL DEFAULT 'active'"))
+        if "is_deleted" not in conversation_columns:
+            connection.execute(text("ALTER TABLE conversations ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT 0"))
         if "timer_enabled" not in conversation_columns:
             connection.execute(text("ALTER TABLE conversations ADD COLUMN timer_enabled BOOLEAN NOT NULL DEFAULT 0"))
         if "timer_total_seconds" not in conversation_columns:
@@ -45,33 +50,21 @@ def _migrate_schema():
 def _seed_defaults():
     db = SessionLocal()
     try:
-        user = db.query(User).filter(User.email == DEFAULT_EMAIL).first()
+        user = UserRepository.get_by_email(DEFAULT_EMAIL, db)
         if not user:
-            user = User(
+            user = UserRepository.create(
                 first_name="Shri",
                 last_name="Shri",
                 email=DEFAULT_EMAIL,
                 password_hash=hash_password(DEFAULT_PASSWORD),
+                db=db,
             )
-            db.add(user)
-            db.flush()
         elif not user.password_hash:
-            user.password_hash = hash_password(DEFAULT_PASSWORD)
+            UserRepository.ensure_password_hash(user, hash_password(DEFAULT_PASSWORD), db)
 
-        conversation = (
-            db.query(Conversation)
-            .filter(Conversation.user_id == user.id)
-            .order_by(Conversation.id.asc())
-            .first()
-        )
+        conversation = ConversationRepository.first_for_user(user.id, db)
         if not conversation:
-            db.add(
-                Conversation(
-                    name="Interview Prep",
-                    description="Default conversation",
-                    user_id=user.id,
-                )
-            )
+            ConversationRepository.create(name="Interview Prep", user_id=user.id, db=db)
 
         db.commit()
     except Exception as exc:

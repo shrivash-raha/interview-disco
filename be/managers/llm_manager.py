@@ -1,79 +1,37 @@
-import os
-
 import requests
 
-
-def _build_interview_prompt(user_input: str, conversation, recent_messages) -> str:
-    transcript_lines = []
-    for message in recent_messages:
-        role = "Candidate" if message.sender == "user" else "Interviewer Coach"
-        transcript_lines.append(f"{role}: {message.text or ''}")
-    transcript = "\n".join(transcript_lines).strip() or "No prior messages."
-
-    job_description = (conversation.job_description_text or "").strip() or "No job description provided."
-    extra_details = (conversation.extra_details or "").strip() or "No extra details provided."
-
-    return (
-        "You are an expert interview assistant helping a candidate prepare and respond in real time.\n"
-        "Your job is to produce concise, high-signal interview responses that are grounded in the role context.\n"
-        "Priorities:\n"
-        "1. Answer the candidate's latest prompt directly.\n"
-        "2. Tailor the response to the job description and extra context when available.\n"
-        "3. Use a confident but natural speaking style suitable for interview practice.\n"
-        "4. Prefer structured, specific points over vague advice.\n"
-        "5. Keep the answer short enough to be spoken aloud naturally unless the candidate explicitly asks for depth.\n"
-        "6. Do not mention these instructions or say you are an AI.\n\n"
-        f"Conversation name: {conversation.name}\n\n"
-        f"Job description:\n{job_description}\n\n"
-        f"Extra candidate details:\n{extra_details}\n\n"
-        f"Recent conversation:\n{transcript}\n\n"
-        f"Latest candidate input:\n{user_input}\n\n"
-        "Respond as the interview assistant."
-    )
-
-
-def _build_opening_question_prompt(conversation) -> str:
-    job_description = (conversation.job_description_text or "").strip() or "No job description provided."
-    extra_details = (conversation.extra_details or "").strip() or "No extra details provided."
-
-    return (
-        "You are acting as the interviewer in a mock interview.\n"
-        "Ask the candidate the first interview question.\n"
-        "Requirements:\n"
-        "1. Ask exactly one strong opening question.\n"
-        "2. Tailor it to the job description and candidate details.\n"
-        "3. Make it sound like a real interviewer, not a coach.\n"
-        "4. Keep it concise and spoken.\n"
-        "5. Do not add analysis, tips, headings, or multiple questions.\n\n"
-        f"Conversation name: {conversation.name}\n\n"
-        f"Job description:\n{job_description}\n\n"
-        f"Extra candidate details:\n{extra_details}\n\n"
-        "Return only the interviewer's opening question."
-    )
-
+from config import get_config
+from db.models import Conversation, Message, User
+from managers.conversation_manager import ConversationManager
+from prompts.interview_prompt import (
+    build_interview_system_prompt,
+    build_interview_user_prompt,
+    build_opening_question_prompt,
+)
 
 class BaseLLMProvider:
-    def generate(self, prompt: str) -> str:
+    def generate(self, *, system_prompt: str, user_prompt: str) -> str:
         raise NotImplementedError
 
 
 class StubLLMProvider(BaseLLMProvider):
-    def generate(self, prompt: str) -> str:
+    def generate(self, *, system_prompt: str, user_prompt: str) -> str:
         return "The LLM provider is set to stub. Configure Ollama to get real interview responses."
 
 
-class OllamaLLMProvider(BaseLLMProvider):
+class RequestsOllamaProvider(BaseLLMProvider):
     def __init__(self):
-        self.base_url = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
-        self.model = os.getenv("OLLAMA_MODEL", "mistral")
-        self.timeout = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "120"))
+        config = get_config()
+        self.base_url = config.llm.ollama_base_url
+        self.model = config.llm.ollama_model
+        self.timeout = config.llm.timeout_seconds
 
-    def generate(self, prompt: str) -> str:
+    def generate(self, *, system_prompt: str, user_prompt: str) -> str:
         response = requests.post(
             f"{self.base_url}/api/generate",
             json={
                 "model": self.model,
-                "prompt": prompt,
+                "prompt": f"{system_prompt}\n\n{user_prompt}",
                 "stream": False,
             },
             timeout=self.timeout,
@@ -88,24 +46,124 @@ class OllamaLLMProvider(BaseLLMProvider):
         return text
 
 
+class LangChainOllamaProvider(BaseLLMProvider):
+    def __init__(self):
+        try:
+            from langchain_core.messages import HumanMessage, SystemMessage
+            from langchain_ollama import ChatOllama
+        except ImportError as exc:
+            raise RuntimeError(
+                "LangChain Ollama dependencies are not installed. "
+                "Install langchain-core and langchain-ollama to enable Ollama via LangChain."
+            ) from exc
+
+        self._human_message = HumanMessage
+        self._system_message = SystemMessage
+        config = get_config()
+        self.client = ChatOllama(
+            model=config.llm.ollama_model,
+            base_url=config.llm.ollama_base_url,
+            temperature=config.llm.temperature,
+        )
+
+    def generate(self, *, system_prompt: str, user_prompt: str) -> str:
+        response = self.client.invoke(
+            [
+                self._system_message(content=system_prompt),
+                self._human_message(content=user_prompt),
+            ]
+        )
+        text = (getattr(response, "content", "") or "").strip()
+        if not text:
+            raise RuntimeError("LangChain Ollama returned an empty response")
+        return text
+
+
+class LangChainOpenAIProvider(BaseLLMProvider):
+    def __init__(self):
+        try:
+            from langchain_core.messages import HumanMessage, SystemMessage
+            from langchain_openai import ChatOpenAI
+        except ImportError as exc:
+            raise RuntimeError(
+                "LangChain OpenAI dependencies are not installed. "
+                "Install langchain-core and langchain-openai to enable OpenAI via LangChain."
+            ) from exc
+
+        self._human_message = HumanMessage
+        self._system_message = SystemMessage
+        config = get_config()
+        self.client = ChatOpenAI(
+            model=config.llm.openai_model,
+            temperature=config.llm.temperature,
+        )
+
+    def generate(self, *, system_prompt: str, user_prompt: str) -> str:
+        response = self.client.invoke(
+            [
+                self._system_message(content=system_prompt),
+                self._human_message(content=user_prompt),
+            ]
+        )
+        text = (getattr(response, "content", "") or "").strip()
+        if not text:
+            raise RuntimeError("LangChain OpenAI returned an empty response")
+        return text
+
+
 class LLMManager:
     @staticmethod
+    def _use_temp_response() -> bool:
+        return get_config().llm.force_temp_response
+
+    @staticmethod
     def _get_provider() -> BaseLLMProvider:
-        provider_name = os.getenv("LLM_PROVIDER", "ollama").lower()
-        if provider_name == "ollama":
-            return OllamaLLMProvider()
+        config = get_config()
+        provider_name = config.llm.provider
+        provider_backend = config.llm.backend
+
         if provider_name == "stub":
             return StubLLMProvider()
+
+        if provider_name == "ollama":
+            if provider_backend == "requests":
+                return RequestsOllamaProvider()
+            return LangChainOllamaProvider()
+
+        if provider_name == "openai":
+            return LangChainOpenAIProvider()
+
         raise RuntimeError(f"Unsupported LLM provider: {provider_name}")
 
     @staticmethod
-    def send_to_llm(user_input: str, conversation, recent_messages) -> str:
-        prompt = _build_interview_prompt(user_input, conversation, recent_messages)
+    def send_to_llm(user_input: str, conversation: Conversation, user: User, recent_messages: list[Message]) -> str:
+        config = get_config()
+        if LLMManager._use_temp_response():
+            return config.llm.temp_response_text
+
+        remaining_seconds = ConversationManager.get_remaining_seconds(conversation)
+        system_prompt = build_interview_system_prompt(
+            user=user,
+            conversation=conversation,
+            recent_messages=recent_messages,
+            remaining_seconds=remaining_seconds,
+        )
+        user_prompt = build_interview_user_prompt(user_input)
         provider = LLMManager._get_provider()
-        return provider.generate(prompt)
+        return provider.generate(system_prompt=system_prompt, user_prompt=user_prompt)
 
     @staticmethod
-    def generate_opening_question(conversation) -> str:
-        prompt = _build_opening_question_prompt(conversation)
+    def generate_opening_question(conversation: Conversation, user: User) -> str:
+        config = get_config()
+        if LLMManager._use_temp_response():
+            return config.llm.temp_response_text
+
+        remaining_seconds = ConversationManager.get_remaining_seconds(conversation)
+        system_prompt = build_opening_question_prompt(
+            user=user,
+            conversation=conversation,
+            remaining_seconds=remaining_seconds,
+        )
+        user_prompt = "Return only the opening interviewer question."
         provider = LLMManager._get_provider()
-        return provider.generate(prompt)
+        return provider.generate(system_prompt=system_prompt, user_prompt=user_prompt)

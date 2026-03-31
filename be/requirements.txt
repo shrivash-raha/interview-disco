@@ -7,3 +7,6 @@ edge-tts==7.2.3
 faster-whisper==1.0.3
 requests>=2.31.0,<3
 pypdf==5.4.0
+langchain-core>=0.3.0,<0.4.0
+langchain-ollama>=0.2.0,<0.3.0
+langchain-openai>=0.2.0,<0.3.0
